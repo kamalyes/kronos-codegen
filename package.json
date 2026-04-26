@@ -1,0 +1,130 @@
+{
+  "name": "kronos-codegen",
+  "displayName": "Kronos Code Generator",
+  "description": "从 Proto/Model/数据库表结构自动生成 Go 微服务 CRUD 代码（Proto/Model/Repository/Service/Errors），支持 MySQL/PostgreSQL",
+  "version": "0.2.0",
+  "publisher": "kamalyes",
+  "license": "MIT",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=18.0.0",
+    "yarn": ">=1.22.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Other"
+  ],
+  "keywords": [
+    "go",
+    "protobuf",
+    "grpc",
+    "codegen",
+    "crud",
+    "mysql",
+    "postgresql"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kronos-codegen.generateFromProto",
+        "title": "Kronos: 从 Proto 生成代码"
+      },
+      {
+        "command": "kronos-codegen.generateFromModel",
+        "title": "Kronos: 从 Model 生成代码"
+      },
+      {
+        "command": "kronos-codegen.generateFromDatabase",
+        "title": "Kronos: 从数据库表生成代码"
+      },
+      {
+        "command": "kronos-codegen.generateProtoFromDatabase",
+        "title": "Kronos: 从数据库表生成 Proto"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "kronos-codegen.generateFromProto",
+          "when": "editorLangId == proto",
+          "group": "kronos@1"
+        },
+        {
+          "command": "kronos-codegen.generateFromModel",
+          "when": "editorLangId == go",
+          "group": "kronos@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kronos Code Generator",
+      "properties": {
+        "kronos-codegen.databaseConnections": {
+          "type": "array",
+          "default": [],
+          "description": "保存的数据库连接配置"
+        },
+        "kronos-codegen.enableFileHeader": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否在生成的代码中添加文件头部注释（@Author/@Date/@Description 等）"
+        },
+        "kronos-codegen.author": {
+          "type": "string",
+          "default": "kronos-codegen",
+          "description": "生成代码头部注释中的作者名"
+        },
+        "kronos-codegen.publisher": {
+          "type": "string",
+          "default": "kronos-team",
+          "description": "生成代码头部注释中的版权归属方"
+        },
+        "kronos-codegen.modelsPackageName": {
+          "type": "string",
+          "default": "models",
+          "description": "Model 层的 Go 包名（目录名）"
+        },
+        "kronos-codegen.repositoryPackageName": {
+          "type": "string",
+          "default": "repository",
+          "description": "Repository 层的 Go 包名（目录名）"
+        },
+        "kronos-codegen.servicePackageName": {
+          "type": "string",
+          "default": "service",
+          "description": "Service 层的 Go 包名（目录名）"
+        },
+        "kronos-codegen.errorsPackageName": {
+          "type": "string",
+          "default": "errors",
+          "description": "错误码的 Go 包名（目录名）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "yarn run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --yarn",
+    "clean": "rimraf out",
+    "icon": "node -e \"const s=require('sharp');s('icon.svg').resize(256,256).png().toFile('icon.png').then(()=>console.log('icon.png generated'))\""
+  },
+  "devDependencies": {
+    "@types/node": "20.14.9",
+    "@types/pg": "8.20.0",
+    "@types/vscode": "1.85.0",
+    "typescript": "5.5.3"
+  },
+  "dependencies": {
+    "mysql2": "3.22.2",
+    "pg": "8.20.0"
+  }
+}
