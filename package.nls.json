@@ -1,0 +1,8 @@
+{
+  "kronos-codegen.description": "Build Codex-ready implementation prompts from selected Proto or Go code.",
+  "kronos-codegen.generateNewCodePrompt.title": "Kronos: Generate New Code with Codex",
+  "kronos-codegen.fieldChangePrompt.title": "Kronos: Sync Field Changes with Codex",
+  "kronos-codegen.implementInterfacePrompt.title": "Kronos: Implement Interface with Codex",
+  "kronos-codegen.customTaskPrompt.title": "Kronos: Custom Codex Task from Selection",
+  "kronos-codegen.codexCommand.description": "VS Code command used to open Codex or Chat after the generated prompt is copied to the clipboard."
+}

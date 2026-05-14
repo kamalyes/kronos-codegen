@@ -1,0 +1,8 @@
+{
+  "kronos-codegen.description": "从选中的 Proto 或 Go 代码整理可直接交给 Codex 的实现提示词。",
+  "kronos-codegen.generateNewCodePrompt.title": "Kronos: 生成新代码提示词",
+  "kronos-codegen.fieldChangePrompt.title": "Kronos: 结构体字段变更提示词",
+  "kronos-codegen.implementInterfacePrompt.title": "Kronos: 实现接口提示词",
+  "kronos-codegen.customTaskPrompt.title": "Kronos: 自定义 Codex 任务提示词",
+  "kronos-codegen.codexCommand.description": "生成提示词复制到剪贴板后，用于打开 Codex 或 Chat 的 VS Code 命令。"
+}
