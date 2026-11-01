@@ -1,4 +1,10 @@
-node_modules/
-out/
-.vscode-test/
-*.vsix
+# Go 构建产物 | Go build output
+/bin/
+/kronos-codegen
+*.test
+*.out
+coverage.*
+
+# 编辑器与系统 | editors and OS
+.DS_Store
+.idea/
