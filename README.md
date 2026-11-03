@@ -111,6 +111,70 @@ and should not be invented by a generator
 想先看它跑起来再读文档,去 [demo/](./demo/):一条命令新建 3 个文件、往 6 个已存在的
 文件里插 9 处条目,**生成出来的代码能编译**
 
+## 🧪 从零到一：契约与服务都用模板生成 | From scratch with both templates
+
+下面这套流程实跑验证过,每一步的输出都核对过,最后 `go build ./...` 退出码 0
+
+前置:`kopy`、`protoc` 与 `protoc-gen-go` / `protoc-gen-go-grpc` /
+`protoc-grpc-gateway` / `protoc-go-inject-tag` 都在 `PATH` 里
+只想先看生成器本身跑起来、不想装这些,去 [demo/](./demo/) —— 它自带契约,零前置条件
+
+```bash
+# 1. 渲染契约仓库 | render the contract hub
+kopy new ./kronos-share-proto-template -o ./demo-share-proto -y \
+  --var OrgName=kamalyes --var OrgPrefix=demo \
+  --var ProjectName=demo-share-proto \
+  --var ModuleName=github.com/kamalyes/demo-share-proto
+
+# 2. 生成 pb | generate the pb files
+cd demo-share-proto && bash scripts/generate-modular.sh && go build ./... && cd ..
+
+# 3. 渲染服务仓库 | render the service
+#    ShareProtoModule 必须指向你自己的契约模块，见下面那条坑
+kopy new ./kronos-service-template -o ./demo-catalog-service -y \
+  --var OrgName=kamalyes --var ObjectPrefix=demo --var ServiceType=catalog \
+  --var ServiceName=Product --var ModuleName=catalog \
+  --var ShareProtoModule=github.com/kamalyes/demo-share-proto
+
+# 4. 契约还没发布时指到本地 | point at the local contract until it is published
+cd demo-catalog-service
+go mod edit -replace github.com/kamalyes/demo-share-proto=../demo-share-proto
+go mod tidy && go build ./...
+
+# 5. 往契约加一个消息，重新生成 pb | add a message to the contract and regenerate
+#    在 demo-share-proto 的 proto/common/*.proto 里加 message，再跑一次第 2 步
+
+# 6. 生成实体并接线 | generate the entity and wire it in
+kronos-codegen --root . new entity Supplier \
+  --pb ../demo-share-proto/pb/common/inventory.pb.go --yes
+
+# 7. 编译 | build
+go build ./...
+```
+
+### 两条实跑踩到的坑 | Two things measured the hard way
+
+**第 3 步的 `ShareProtoModule` 不能省** `-y` 会让它取默认值,而默认值刻意指向
+`kronos-share-proto-template` 的 **`build` 分支** —— 那个模板的 CI 会把自己按默认
+变量渲染一遍、跑完 protoc、验证能编译,再强推到 `build` 分支,于是同一个仓库既是
+模板又是可消费的依赖 这个默认值本身是好的:**不需要自己的契约仓库时,第 1、2 步
+可以整个跳过** 但一旦你渲染了自己的契约,就必须用 `--var` 把它指过去,否则服务
+导入的是模板仓库的 `pb/`,而那个仓库的 master 里 `pb/` 只有一个 `.gitkeep`
+
+**契约里消息与服务常常不在一个包** 实测:`SupplierInfo` 在 `pb/common`,
+`WarehouseService` 在 `pb/inventory` 所以 `--pb` 指的是**消息所在**的文件,而生成的
+服务要嵌的未实现桩来自**服务所在**的包 —— 生成器会搜整棵 `pb` 树把后者找出来,
+两个包分别以 `{{.MsgAlias}}` 与 `{{.SvcAlias}}` 进模板,不必你指
+
+### 网关不是 `new entity` 的目标 | A gateway is not a target for new entity
+
+`kronos-gateway-template` 里没有 `models/table_names.go`、`repository/factory.go`、
+`migrations/`、`bootstrap/pbmo.go` 中的任何一个 —— 网关路由请求,不拥有实体
+线上的那两个网关也是同样的形态
+
+[EN] A gateway owns no entities: the gateway template has none of the anchor files, and the
+production gateways share that shape
+
 ## 🖥️ 命令与全局 flag | Commands and global flags
 
 | 命令 \| Command | 作用 \| What it does |

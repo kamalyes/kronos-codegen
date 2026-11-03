@@ -50,9 +50,27 @@
 | --- | --- | --- |
 | `{{.Fields}}` | 契约消息的字段表，元素含 `Name` / `Type` / `Column` / `Tag` / `JSONTag` / `Comment` | 用 `{{range .Fields}}` 遍历 |
 | `{{.Imports}}` | 从字段类型反推出的导入清单 | `["time", "…/pb/enums"]` |
-| `{{.PbImport}}` | 契约包的导入路径，往上找契约仓库的 `go.mod` 得到 | `…/apex-share-proto/pb/common` |
-| `{{.PbAlias}}` | 导入别名，目录名加 `pb` | `commonpb` |
-| `{{.HasService}}` | 契约里有没有同名 gRPC 服务，看同目录 `*_grpc.pb.go` 里有没有 `Unimplemented<名字>ServiceServer` | `true` / `false` |
+| `{{.MsgImport}}` | **消息**所在包的导入路径，往上找契约仓库的 `go.mod` 得到 | `…/share-proto/pb/common` |
+| `{{.MsgAlias}}` | 消息所在包的别名，目录名加 `pb` | `commonpb` |
+| `{{.SvcImport}}` | **服务**所在包的导入路径，没有对应服务时是空串 | `…/share-proto/pb/inventory` |
+| `{{.SvcAlias}}` | 服务所在包的别名 | `inventorypb` |
+| `{{.HasService}}` | 契约里有没有同名 gRPC 服务，搜整棵 `pb` 树找 `Unimplemented<名字>ServiceServer` | `true` / `false` |
+| `{{.HasBaseService}}` | 本项目的 `service/common` 里有没有 `BaseServiceImpl`，决定服务要不要嵌共享基座 | `true` / `false` |
+
+消息包与服务包是**两个变量**而不是一个:实测契约里 `SupplierInfo` 在 `pb/common`、
+`WarehouseService` 在 `pb/inventory` 合成一个会让 pbmo 的注册语句引用到服务包里
+不存在的消息类型,编译不过
+
+`HasService` 与 `HasBaseService` 都是**探出来的而不是假设的**:嵌 `Unimplemented…`
+之前看契约里有没有那个类型,嵌共享基座之前看项目里有没有 —— 写死任何一个,都会让
+不满足假设的项目生成出编译不过的代码
+
+[EN] The message package and the service package are two variables rather than one, since
+`SupplierInfo` was measured in `pb/common` while `WarehouseService` sits in `pb/inventory`,
+and collapsing them makes the pbmo registration reference a message type that does not exist
+in the service's package
+Both `HasService` and `HasBaseService` are probed rather than assumed, because hardcoding
+either makes the generated code fail to compile in a project that does not match
 | `{{.Module}}` | 本项目的模块路径，取自项目根目录的 `go.mod`，`--var Module=` 可覆盖 | `github.com/acme/my-service` |
 
 没给 `--pb` 时 `Fields` 与 `Imports` 是空的、`PbImport` / `PbAlias` 是空串、
