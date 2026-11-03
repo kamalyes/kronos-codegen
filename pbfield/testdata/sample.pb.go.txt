@@ -1,0 +1,32 @@
+// 这份夹具是 protoc 真实产出的缩影：字段名、protobuf tag、行尾注释与导入别名
+// 都照 protoc 的形态写，用来钉住字段提取与类型映射
+//
+// 存成 .txt 而不是 .go：它不该被编译，也不该被 go vet 当成本包的代码
+//
+// [EN] This fixture mirrors what protoc actually produces, with field names, protobuf tags,
+// trailing comments and import aliases in protoc's shape, pinning field extraction and
+// type mapping
+// It is stored as .txt rather than .go so it is neither compiled nor treated as this
+// package's code by go vet
+package samplepb
+
+import (
+	enums "github.com/example/demo-proto/pb/enums"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+)
+
+type OrderInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`              // 订单ID | [EN] Order ID
+	TenantId      string                 `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`           // 租户ID | [EN] Tenant ID
+	Title         string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`                                 // 标题 | [EN] Title
+	Amount        int64                  `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`                              // 金额 | [EN] Amount
+	Paid          bool                   `protobuf:"varint,5,opt,name=paid,proto3" json:"paid,omitempty"`                                  // 是否已支付 | [EN] Whether paid
+	Status        enums.CommonStatus     `protobuf:"varint,6,opt,name=status,proto3,enum=demo.enums.CommonStatus" json:"status,omitempty"` // 状态 | [EN] Status
+	ItemIds       []string               `protobuf:"bytes,7,rep,name=item_ids,json=itemIds,proto3" json:"item_ids,omitempty"`              // 条目ID列表 | [EN] Item ID list
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`        // 创建时间 | [EN] Created at
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`        // 更新时间 | [EN] Updated at
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
