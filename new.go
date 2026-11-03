@@ -112,7 +112,22 @@ func (e *env) runNewEntity(args []string) int {
 
 	var fields any
 	var imports []string
-	var pbImport, pbAlias string
+	// 消息所在的包与服务所在的包分开记
+	//
+	// 一度把两者合成一个 PbAlias，于是 pbmo 的注册语句被生成成
+	// pbmo.Register[models.WarehouseModel, inventorypb.WarehouseInfo]() ——
+	// 而 WarehouseInfo 在 commonpb 里，inventorypb 只有服务，编译不过
+	// 嵌未实现桩要服务所在的包，引用 <名字>Info 要消息所在的包，这两件事不是一回事
+	//
+	// [EN] The package holding the message and the one holding the service are tracked
+	// separately
+	// Collapsing them into a single PbAlias once produced
+	// pbmo.Register[models.WarehouseModel, inventorypb.WarehouseInfo](), while WarehouseInfo
+	// lives in commonpb and inventorypb holds only the service, which does not compile
+	// Embedding the stub needs the service's package and referring to <Name>Info needs the
+	// message's package, and those are not the same thing
+	var msgImport, msgAlias string
+	var svcImport, svcAlias string
 	var hasSvc bool
 	if *pbPath != "" {
 		msg := *message
@@ -139,19 +154,40 @@ func (e *env) runNewEntity(args []string) int {
 		// [EN] The contract package's import path, alias and whether it has a matching gRPC
 		// service all follow from --pb; three more flags would only invite mistakes whose
 		// consequence is a generated file that does not compile
-		contract, err := pbfield.DescribeContract(*pbPath)
+		// 消息所在的包与服务所在的包可能不是同一个
+		//
+		// 实测渲染出来的契约：ProductInfo 在 pb/common、ProductService 在 pb/catalog
+		// 生成的服务要嵌未实现桩，导入的必须是**服务**所在的包
+		// 所以这里搜整棵 pb 树找服务，找到了就用它那个包的路径与别名
+		//
+		// [EN] The package holding the message and the one holding the service need not be
+		// the same: measured on a rendered contract, ProductInfo sits in pb/common while
+		// ProductService sits in pb/catalog
+		// The generated service embeds the unimplemented stub, which must be imported from
+		// the package holding the service, so the whole pb tree is searched and that
+		// package's path and alias are used when the service is found
+		msgContract, err := pbfield.DescribeContract(*pbPath)
 		if err != nil {
 			fmt.Fprintf(e.err, "推断契约包失败: %v\n", err)
 			return exitFailure
 		}
-		hasService, err := pbfield.HasGRPCService(*pbPath, name)
+		svcContract, hasService, err := pbfield.FindGRPCService(*pbPath, name)
 		if err != nil {
 			fmt.Fprintf(e.err, "探测 gRPC 服务失败: %v\n", err)
 			return exitFailure
 		}
-		pbImport, pbAlias, hasSvc = contract.Import, contract.Alias, hasService
-		fmt.Fprintf(e.out, "契约包: %s（别名 %s），%sServiceServer 存在=%v\n",
-			contract.Import, contract.Alias, name, hasService)
+		msgImport, msgAlias = msgContract.Import, msgContract.Alias
+		if hasService {
+			svcImport, svcAlias = svcContract.Import, svcContract.Alias
+		}
+		hasSvc = hasService
+		fmt.Fprintf(e.out, "消息所在包: %s（别名 %s）\n", msgContract.Import, msgContract.Alias)
+		if hasService {
+			fmt.Fprintf(e.out, "服务所在包: %s（别名 %s），嵌 Unimplemented%sServiceServer\n",
+				svcContract.Import, svcContract.Alias, name)
+		} else {
+			fmt.Fprintf(e.out, "契约里没有 %sService，生成的服务不嵌未实现桩\n", name)
+		}
 	}
 
 	vars := entityVars(name, e.opts.Vars, fields)
@@ -193,9 +229,16 @@ func (e *env) runNewEntity(args []string) int {
 		imports = []string{}
 	}
 	vars["Imports"] = imports
-	vars["PbImport"] = pbImport
-	vars["PbAlias"] = pbAlias
+	vars["MsgImport"] = msgImport
+	vars["MsgAlias"] = msgAlias
+	vars["SvcImport"] = svcImport
+	vars["SvcAlias"] = svcAlias
 	vars["HasService"] = hasSvc
+	// 项目的 service/common 里有没有共享基座，决定服务模板要不要嵌它
+	// 探而不假设：理由见 probe.go 的说明
+	// [EN] Whether the project's service/common has a shared base decides whether the
+	// service template embeds it; probed rather than assumed, see probe.go
+	vars["HasBaseService"] = hasTypeInPackage(root, "service/common", "BaseServiceImpl")
 	items, err := manifest.Items("entity", vars, root)
 	if err != nil {
 		fmt.Fprintf(e.err, "%v\n", err)

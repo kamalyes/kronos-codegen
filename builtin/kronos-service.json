@@ -76,8 +76,8 @@
         "kind": "stmt",
         "file": "bootstrap/pbmo.go",
         "func": "registerConverters",
-        "stmt": "pbmo.Register[models.{{.Name}}Model, {{.PbAlias}}.{{.Name}}Info]()",
-        "when": "PbAlias",
+        "stmt": "pbmo.Register[models.{{.Name}}Model, {{.MsgAlias}}.{{.Name}}Info]()",
+        "when": "MsgAlias",
         "optional": true
       },
       {

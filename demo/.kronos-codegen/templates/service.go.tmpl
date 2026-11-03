@@ -1,7 +1,7 @@
 package {{.Snake}}
 
 {{if .HasService}}import (
-	{{.PbAlias}} "{{.PbImport}}"
+	{{.SvcAlias}} "{{.SvcImport}}"
 )
 
 {{end}}// {{.Name}}ServiceImpl {{.Name}} 领域服务
@@ -12,7 +12,7 @@ package {{.Snake}}
 // [EN] The contract has no {{.Name}}Service, so no stub is embedded
 {{end}}type {{.Name}}ServiceImpl struct {
 {{- if .HasService}}
-	{{.PbAlias}}.Unimplemented{{.Name}}ServiceServer
+	{{.SvcAlias}}.Unimplemented{{.Name}}ServiceServer
 {{- end}}
 }
 

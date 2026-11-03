@@ -1,49 +1,54 @@
 package {{.Snake}}
 
-import (
+{{if or .HasService .HasBaseService}}import (
 {{- if .HasService}}
-	{{.PbAlias}} "{{.PbImport}}"
+	{{.SvcAlias}} "{{.SvcImport}}"
 {{- end}}
+{{- if .HasBaseService}}
 	commonsvc "{{.Module}}/service/common"
+{{- end}}
 )
 
-// {{.Name}}ServiceImpl {{.Name}} 领域服务
+{{end}}// {{.Name}}ServiceImpl {{.Name}} 领域服务
 //
-{{if .HasService}}// 嵌入 {{.PbAlias}}.Unimplemented{{.Name}}ServiceServer：生成出来的这一刻服务就满足
-// gRPC 接口、可以直接注册，还没写的方法返回 Unimplemented 而不是让编译失败
+{{if .HasService}}// 嵌 {{.SvcAlias}}.Unimplemented{{.Name}}ServiceServer：生成出来的这一刻服务就满足 gRPC
+// 接口、可以直接注册，还没写的方法返回 Unimplemented 而不是让编译失败
 // 方法一个个往下补，不必先补齐才能跑起来
 //
-// [EN] Embedding {{.PbAlias}}.Unimplemented{{.Name}}ServiceServer makes the service satisfy
+// [EN] Embedding {{.SvcAlias}}.Unimplemented{{.Name}}ServiceServer makes the service satisfy
 // the gRPC interface the moment it is generated, so it can be registered immediately and
 // methods not yet written return Unimplemented instead of breaking the build
-// Methods are then filled in one at a time rather than all before it can run
-{{else}}// 契约里没有 {{.Name}}Service 这个 gRPC 服务，所以没有嵌未实现桩
-// 契约里加上之后，重新生成或手工补一行
-//   {{.Name | printf "%s"}}pb.Unimplemented{{.Name}}ServiceServer
-//
-// [EN] The contract defines no {{.Name}}Service, so no unimplemented stub is embedded
-// Add one by hand or regenerate once the contract has the service
+{{else}}// 契约里没有 {{.Name}}Service，所以没有嵌未实现桩 契约里加上之后重新生成即可
+// [EN] The contract defines no {{.Name}}Service, so no unimplemented stub is embedded;
+// regenerate once the contract has it
 {{end}}//
-// 嵌入 *commonsvc.BaseServiceImpl 拿到共享基座（仓库工厂、缓存、版本追踪这些），
-// 不自己再持有一份依赖
-//
-// [EN] Embedding *commonsvc.BaseServiceImpl provides the shared base with the repository
-// factory, caches and version tracking rather than holding another copy of those dependencies
-//
-// 业务方法刻意不生成：那是这个实体真正要人写的部分，生成一批空壳只会让人
-// 以为已经实现过
+{{if .HasBaseService}}// 嵌 *commonsvc.BaseServiceImpl 拿到项目的共享基座，不自己再持有一份依赖
+// [EN] Embedding *commonsvc.BaseServiceImpl provides the project's shared base rather than
+// holding another copy of those dependencies
+{{else}}// 本项目的 service/common 里没有 BaseServiceImpl，所以没有嵌共享基座
+// 这一行是探出来的而不是假设的：写死它会让没有这个类型的项目生成出编译不过的代码
+// [EN] This project's service/common has no BaseServiceImpl, so no shared base is embedded
+// That line is probed rather than assumed, since hardcoding it makes the generated code fail
+// to compile in a project without the type
+{{end}}//
+// 业务方法刻意不生成：那是这个实体真正要人写的部分，生成一批空壳只会让人以为
+// 已经实现过
 //
 // [EN] Business methods are deliberately not generated, since they are the part that
 // actually has to be written and empty shells would suggest they already exist
 type {{.Name}}ServiceImpl struct {
 {{- if .HasService}}
-	{{.PbAlias}}.Unimplemented{{.Name}}ServiceServer
+	{{.SvcAlias}}.Unimplemented{{.Name}}ServiceServer
 {{- end}}
+{{- if .HasBaseService}}
 	*commonsvc.BaseServiceImpl
+{{- end}}
 }
 
 // New{{.Name}}Service 创建 {{.Name}} 领域服务
 // [EN] New{{.Name}}Service builds the {{.Name}} domain service
-func New{{.Name}}Service(base *commonsvc.BaseServiceImpl) *{{.Name}}ServiceImpl {
+{{if .HasBaseService}}func New{{.Name}}Service(base *commonsvc.BaseServiceImpl) *{{.Name}}ServiceImpl {
 	return &{{.Name}}ServiceImpl{BaseServiceImpl: base}
-}
+}{{else}}func New{{.Name}}Service() *{{.Name}}ServiceImpl {
+	return &{{.Name}}ServiceImpl{}
+}{{end}}

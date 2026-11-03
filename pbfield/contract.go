@@ -35,6 +35,7 @@ package pbfield
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,10 +60,20 @@ func DescribeContract(pbPath string) (*Contract, error) {
 		return nil, err
 	}
 	dir := filepath.Dir(abs)
+	modRoot, module, err := moduleOf(dir)
+	if err != nil {
+		return nil, err
+	}
+	c, _, err := contractOf(modRoot, module, dir)
+	return c, err
+}
 
-	// 往上找 go.mod：契约通常是独立仓库，模块路径只有它自己的 go.mod 知道
-	// [EN] Walk up for go.mod, since the contract is usually its own repository and only
-	// its go.mod knows the module path
+// moduleOf 往上找 go.mod，返回模块根目录与模块路径
+// 契约通常是独立仓库，模块路径只有它自己的 go.mod 知道
+//
+// [EN] moduleOf walks up for go.mod and returns the module root and path, since the
+// contract is usually its own repository and only its go.mod knows the module path
+func moduleOf(dir string) (string, string, error) {
 	modRoot := dir
 	for {
 		if _, err := os.Stat(filepath.Join(modRoot, "go.mod")); err == nil {
@@ -70,66 +81,123 @@ func DescribeContract(pbPath string) (*Contract, error) {
 		}
 		parent := filepath.Dir(modRoot)
 		if parent == modRoot {
-			return nil, fmt.Errorf("从 %s 往上没找到 go.mod，无法推出契约包的导入路径", dir)
+			return "", "", fmt.Errorf("从 %s 往上没找到 go.mod，无法推出契约包的导入路径", dir)
 		}
 		modRoot = parent
 	}
-
 	raw, err := os.ReadFile(filepath.Join(modRoot, "go.mod"))
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	module := ""
 	for _, line := range strings.Split(string(raw), "\n") {
 		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			module = strings.TrimSpace(rest)
-			break
+			if m := strings.TrimSpace(rest); m != "" {
+				return modRoot, m, nil
+			}
 		}
 	}
-	if module == "" {
-		return nil, fmt.Errorf("%s 里没有 module 声明", filepath.Join(modRoot, "go.mod"))
-	}
+	return "", "", fmt.Errorf("%s 里没有 module 声明", filepath.Join(modRoot, "go.mod"))
+}
 
+// contractOf 把一个包目录换算成导入路径与别名
+// [EN] contractOf turns a package directory into its import path and alias
+func contractOf(modRoot, module, dir string) (*Contract, bool, error) {
 	rel, err := filepath.Rel(modRoot, dir)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	importPath := module
 	if rel != "." {
 		importPath = module + "/" + filepath.ToSlash(rel)
 	}
-
-	base := filepath.Base(dir)
-	alias := strings.ReplaceAll(base, "_", "") + "pb"
-	return &Contract{Import: importPath, Alias: alias}, nil
+	alias := strings.ReplaceAll(filepath.Base(dir), "_", "") + "pb"
+	return &Contract{Import: importPath, Alias: alias}, true, nil
 }
 
-// HasGRPCService 报告契约里有没有名为 <name>Service 的 gRPC 服务
+// FindGRPCService 在整个契约里找名为 <name>Service 的 gRPC 服务，并给出它所在的包
 //
-// 判据是同目录的 *_grpc.pb.go 里有没有 Unimplemented<name>ServiceServer
-// 这个类型是 protoc-gen-go-grpc 为每个 service 生成的，有它就说明服务存在
+// 判据是 *_grpc.pb.go 里有没有 Unimplemented<name>ServiceServer —— 这个类型是
+// protoc-gen-go-grpc 为每个 service 生成的
 //
-// [EN] HasGRPCService reports whether the contract defines a gRPC service named
-// <name>Service, judged by the presence of Unimplemented<name>ServiceServer in a
-// *_grpc.pb.go beside it, a type protoc-gen-go-grpc emits for every service
-func HasGRPCService(pbPath, name string) (bool, error) {
-	dir := filepath.Dir(pbPath)
-	entries, err := os.ReadDir(dir)
+// 为什么要搜整棵树而不是只看 --pb 同目录
+//
+// 真实契约里消息与服务常常不在一个包 实测渲染出来的契约:ProductInfo 在
+// pb/common/catalog.pb.go，而 UnimplementedProductServiceServer 在
+// pb/catalog/product_service_grpc.pb.go 只看同目录会判成「没有服务」，于是生成的
+// 服务不嵌未实现桩 —— 明明契约里有
+//
+// 返回的包也必须是**服务所在**的那个，而不是消息所在的那个：嵌桩要导入的是前者
+// 这两者在上面那个例子里分别是 pb/catalog 与 pb/common，拿错了编译不过
+//
+// 搜索范围限定在 pb 目录（找不到 pb 这一层就退回契约模块根）：契约仓库里只有这一
+// 棵树是 protoc 的产出，扫整个仓库会把测试夹具之类一起算进来
+//
+// [EN] FindGRPCService locates a gRPC service named <name>Service anywhere in the contract
+// and reports which package holds it, judged by Unimplemented<name>ServiceServer in a
+// *_grpc.pb.go, the type protoc-gen-go-grpc emits per service
+// The whole tree is searched rather than just the --pb directory because a real contract
+// often keeps messages and services in different packages: measured on a rendered contract,
+// ProductInfo sits in pb/common/catalog.pb.go while UnimplementedProductServiceServer sits
+// in pb/catalog/product_service_grpc.pb.go, so looking only beside the message would report
+// no service and the generated service would omit the stub the contract does define
+// The package returned is the one holding the service rather than the one holding the
+// message, since the stub is imported from the former, and those are pb/catalog and
+// pb/common in that example, so getting it wrong does not compile
+// The search is confined to the pb directory, falling back to the contract module root when
+// there is no such level, because that tree is protoc's output and scanning the whole
+// repository would pull in fixtures and the like
+func FindGRPCService(pbPath, name string) (*Contract, bool, error) {
+	abs, err := filepath.Abs(pbPath)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	needle := "Unimplemented" + name + "ServiceServer"
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_grpc.pb.go") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+	modRoot, module, err := moduleOf(filepath.Dir(abs))
+	if err != nil {
+		return nil, false, err
+	}
+
+	searchRoot := modRoot
+	if pbDir := pbRootOf(filepath.Dir(abs), modRoot); pbDir != "" {
+		searchRoot = pbDir
+	}
+
+	needle := "type Unimplemented" + name + "ServiceServer struct"
+	var found string
+	err = filepath.WalkDir(searchRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return false, err
+			return err
 		}
-		if strings.Contains(string(raw), "type "+needle+" struct") {
-			return true, nil
+		if found != "" || d.IsDir() || !strings.HasSuffix(d.Name(), "_grpc.pb.go") {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(raw), needle) {
+			found = filepath.Dir(path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if found == "" {
+		return nil, false, nil
+	}
+	return contractOf(modRoot, module, found)
+}
+
+// pbRootOf 从 .pb.go 所在目录往上找名为 pb 的那一层，找不到返回空串
+// [EN] pbRootOf walks up from the .pb.go's directory for a level named pb, or returns empty
+func pbRootOf(dir, modRoot string) string {
+	for d := dir; strings.HasPrefix(d, modRoot); d = filepath.Dir(d) {
+		if filepath.Base(d) == "pb" {
+			return d
+		}
+		if d == modRoot {
+			break
 		}
 	}
-	return false, nil
+	return ""
 }

@@ -111,7 +111,21 @@ func Model(msg *Message, entitySnake string, indexColumns []string) []ModelField
 			}
 
 		case f.GoType == "string":
-			if f.ProtoName == entitySnake+"_id" && !primaryTaken {
+			// 主键认两种写法：{实体}_id 与裸 id
+			//
+			// 实测两种都在用：apex 的模型写 config_id / role_id，而 kronos 契约模板
+			// 里的 WarehouseInfo 第一个字段就叫 id
+			// 只认前一种的话，用 id 的契约生成出来的模型**没有主键** —— gorm 会退回
+			// 按字段名猜（ID / Id），而这里的字段名归一成了 ID，于是看着能跑，
+			// 实际主键是靠猜来的，列宽与 primaryKey 标注都丢了
+			//
+			// [EN] Two spellings are accepted as the primary key: {entity}_id and a bare id
+			// Both are in use: this ecosystem's models write config_id and role_id while the
+			// contract template's WarehouseInfo names its first field id
+			// Recognising only the former leaves a model generated from an id-based contract
+			// with no primary key at all, where gorm falls back to guessing from the field
+			// name and the column width and primaryKey annotation are both lost
+			if (f.ProtoName == entitySnake+"_id" || f.ProtoName == "id") && !primaryTaken {
 				parts = append(parts, "type:varchar(36)", "primaryKey")
 				primaryTaken = true
 				primaryColumn = f.ProtoName

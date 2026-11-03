@@ -195,3 +195,45 @@ func contains(s, sub string) bool {
 		return false
 	})()
 }
+
+// TestModelBarePrimaryKey 列名是裸 id 时也要认成主键
+//
+// 两种写法都在用：{实体}_id 与 id 只认前一种的话，用 id 的契约生成出来的模型
+// 没有主键，而 gorm 会退回按字段名猜，看着能跑但 primaryKey 与列宽都丢了
+//
+// [EN] A bare id column must also be recognised as the primary key
+// Both spellings are in use, and recognising only {entity}_id leaves a model generated from
+// an id-based contract with no primary key, where gorm falls back to guessing from the field
+// name so it appears to work while the primaryKey annotation and column width are lost
+func TestModelBarePrimaryKey(t *testing.T) {
+	raw := []byte(`package samplepb
+
+type BareInfo struct {
+	Id       string ` + "`" + `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` + "`" + `
+	TenantId string ` + "`" + `protobuf:"bytes,2,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` + "`" + `
+}
+`)
+	path := filepath.Join(t.TempDir(), "bare.pb.go")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Parse(path, "BareInfo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := Model(m, "bare", nil)
+	if len(fields) != 2 {
+		t.Fatalf("字段数 got %d want 2", len(fields))
+	}
+	if !contains(fields[0].Tag, "primaryKey") {
+		t.Errorf("裸 id 没有被认成主键: %s", fields[0].Tag)
+	}
+	if !contains(fields[0].Tag, "varchar(36)") {
+		t.Errorf("主键列宽丢了: %s", fields[0].Tag)
+	}
+	// 主键自己不该再带索引
+	// [EN] The primary key carries no extra index
+	if contains(fields[0].Tag, ";index") {
+		t.Errorf("主键多了一个索引: %s", fields[0].Tag)
+	}
+}
