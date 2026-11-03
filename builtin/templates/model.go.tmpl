@@ -1,0 +1,48 @@
+package models
+
+{{if .Imports}}import (
+{{- range .Imports}}
+	"{{.}}"
+{{- end}}
+)
+{{else}}import "time"
+{{end}}
+// {{.Name}}Model {{.Name}} 实体
+{{if .Fields}}//
+// 字段取自契约里的消息，Go 类型就是 protoc 给出的那一个，所以模型与 pb 两侧
+// 不会在类型上分歧 列名用的是 proto 字段名
+//
+// [EN] The fields come from the message in the contract and the Go types are exactly the
+// ones protoc produced, so the model and the pb side cannot disagree on type, while the
+// column names are the proto field names
+{{else}}//
+// 这里只有骨架：生成时没有给 --pb，拿不到契约里的字段表
+// 字段是一个实体的实质，没有契约就不该由生成器编出来 —— 要按契约生成，用
+//   kronos-codegen new entity {{.Name}} --pb <契约的 .pb.go> --message {{.Name}}Info
+//
+// [EN] This is a skeleton because no --pb was given and no field table could be read
+// The fields are the substance of an entity and should not be invented by a generator;
+// pass --pb with the contract's .pb.go to derive them
+{{end}}//
+// 表名用 {{.Snake}}s：变量派生只做大小写与分隔符转换，不含不规则复数
+// 这个文件生成之后归项目所有，表名、列宽、索引、JSON 列的选择都可以直接改
+//
+// [EN] The table name is {{.Snake}}s, since variable derivation only changes case and
+// separators and knows nothing about irregular plurals
+// This file belongs to the project once generated, so the table name, column widths,
+// indexes and the choice of JSON columns can all be edited directly
+type {{.Name}}Model struct {
+{{- if .Fields}}
+{{- range .Fields}}
+	{{.Name}} {{.Type}} `gorm:"{{.Tag}}" json:"{{.JSONTag}}"`{{if .Comment}} // {{.Comment}}{{end}}
+{{- end}}
+{{- else}}
+	{{.Name}}ID string    `gorm:"column:{{.Snake}}_id;type:varchar(36);primaryKey" json:"{{.Snake}}_id"`
+	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+{{- end}}
+}
+
+// TableName 返回表名
+// [EN] TableName returns the table name
+func ({{.Name}}Model) TableName() string { return "{{.Snake}}s" }

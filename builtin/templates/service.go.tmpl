@@ -1,0 +1,49 @@
+package {{.Snake}}
+
+import (
+{{- if .HasService}}
+	{{.PbAlias}} "{{.PbImport}}"
+{{- end}}
+	commonsvc "{{.Module}}/service/common"
+)
+
+// {{.Name}}ServiceImpl {{.Name}} 领域服务
+//
+{{if .HasService}}// 嵌入 {{.PbAlias}}.Unimplemented{{.Name}}ServiceServer：生成出来的这一刻服务就满足
+// gRPC 接口、可以直接注册，还没写的方法返回 Unimplemented 而不是让编译失败
+// 方法一个个往下补，不必先补齐才能跑起来
+//
+// [EN] Embedding {{.PbAlias}}.Unimplemented{{.Name}}ServiceServer makes the service satisfy
+// the gRPC interface the moment it is generated, so it can be registered immediately and
+// methods not yet written return Unimplemented instead of breaking the build
+// Methods are then filled in one at a time rather than all before it can run
+{{else}}// 契约里没有 {{.Name}}Service 这个 gRPC 服务，所以没有嵌未实现桩
+// 契约里加上之后，重新生成或手工补一行
+//   {{.Name | printf "%s"}}pb.Unimplemented{{.Name}}ServiceServer
+//
+// [EN] The contract defines no {{.Name}}Service, so no unimplemented stub is embedded
+// Add one by hand or regenerate once the contract has the service
+{{end}}//
+// 嵌入 *commonsvc.BaseServiceImpl 拿到共享基座（仓库工厂、缓存、版本追踪这些），
+// 不自己再持有一份依赖
+//
+// [EN] Embedding *commonsvc.BaseServiceImpl provides the shared base with the repository
+// factory, caches and version tracking rather than holding another copy of those dependencies
+//
+// 业务方法刻意不生成：那是这个实体真正要人写的部分，生成一批空壳只会让人
+// 以为已经实现过
+//
+// [EN] Business methods are deliberately not generated, since they are the part that
+// actually has to be written and empty shells would suggest they already exist
+type {{.Name}}ServiceImpl struct {
+{{- if .HasService}}
+	{{.PbAlias}}.Unimplemented{{.Name}}ServiceServer
+{{- end}}
+	*commonsvc.BaseServiceImpl
+}
+
+// New{{.Name}}Service 创建 {{.Name}} 领域服务
+// [EN] New{{.Name}}Service builds the {{.Name}} domain service
+func New{{.Name}}Service(base *commonsvc.BaseServiceImpl) *{{.Name}}ServiceImpl {
+	return &{{.Name}}ServiceImpl{BaseServiceImpl: base}
+}

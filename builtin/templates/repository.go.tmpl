@@ -1,0 +1,31 @@
+package repository
+
+import (
+	"{{.Module}}/models"
+	gwglobal "github.com/kamalyes/go-rpc-gateway/global"
+	"github.com/kamalyes/go-sqlbuilder/db"
+	"github.com/kamalyes/go-sqlbuilder/repository"
+)
+
+// {{.Name}}Repository {{.Name}} 仓库
+// 嵌入 BaseRepository 拿到通用 CRUD，业务查询往下面加方法
+//
+// [EN] The {{.Name}} repository embeds BaseRepository for the generic CRUD surface, with
+// business queries added as methods below
+type {{.Name}}Repository struct {
+	*repository.BaseRepository[models.{{.Name}}Model]
+}
+
+// New{{.Name}}Repository 创建 {{.Name}} 仓库实例
+// [EN] New{{.Name}}Repository builds a {{.Name}} repository
+func New{{.Name}}Repository() *{{.Name}}Repository {
+	dbHandler := db.MustNewGormHandler(gwglobal.DB)
+	return &{{.Name}}Repository{
+		BaseRepository: repository.NewBaseRepository(
+			dbHandler,
+			gwglobal.GetLogger(),
+			models.{{.Name}}Model{}.TableName(),
+			repository.WithAutoFields[models.{{.Name}}Model](),
+		),
+	}
+}

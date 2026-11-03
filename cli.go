@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kamalyes/kronos-codegen/builtin"
 	"github.com/kamalyes/kronos-codegen/patch"
 	"github.com/kamalyes/kronos-codegen/plan"
 )
@@ -144,6 +145,8 @@ func Run(args []string, stdout, stderr io.Writer, stdin io.Reader) int {
 	switch rest[0] {
 	case "new":
 		return e.runNew(rest[1:])
+	case "init":
+		return e.runInit(rest[1:])
 	case "check":
 		return e.runCheck(rest[1:])
 	case "version":
@@ -185,6 +188,7 @@ func usage(w io.Writer) {
 
 命令 / Commands:
   new entity <Name>    往已存在的文件里幂等插入一个实体所需的全部条目
+  init                 把内置清单与模板取进项目，供按本项目形态改写
   check [--entity N]   一致性校验，报告计划里哪些条目还没落地
   version              打印版本号
   help                 打印本说明
@@ -197,9 +201,16 @@ func usage(w io.Writer) {
   --format <policy>    gofmt 归一化策略: if-clean|never|always
   --var key=value      附加模板变量，可重复
 
+new entity 专用 flag:
+  --pb <file>          protoc 生成的 .pb.go，模型字段从它的消息里取
+  --message <Name>     契约里的消息名，默认 <实体名>Info
+  --index-columns <a,b> 显式指定加索引的列，留空按「非主键的 *_id 列」判断
+
+不给 --plan 也没有项目清单时用内置清单，约定形态的服务零配置可用
+
 示例 / Examples:
   kronos-codegen new entity Order --dry-run
-  kronos-codegen --root ../apex-notify-service new entity Order --yes
+  kronos-codegen --root ../kronos-notify-service new entity Order --yes
   kronos-codegen check --entity Order
 `)
 }
@@ -233,11 +244,34 @@ func (e *env) loadPlan(root string) (*plan.Manifest, string, error) {
 	if path == "" {
 		path = filepath.Join(root, plan.DefaultFileName)
 	}
+	// 项目没放清单时用内置的，而不是报错让人从零写一份
+	//
+	// 内置清单覆盖 kronos 形态的服务，锚点全是约定名（RepositoryFactory /
+	// NewRepositoryFactory / GetAllModels / models/table_names.go 的唯一 var 块），
+	// 所以这类项目零配置可用
+	// 形态不一样就放一份自己的 .kronos-codegen.json，它整体覆盖内置的
+	// 显式给了 --plan 却找不到文件，仍然报错 —— 那是用法错误，不该悄悄换成内置的
+	//
+	// [EN] A project without a manifest falls back to the built-in one rather than failing
+	// and asking for one to be written from scratch
+	// The built-in manifest covers kronos-shaped services and anchors entirely on convention
+	// names, so such a project needs no configuration, while a project of a different shape
+	// drops in its own .kronos-codegen.json which overrides the built-in wholesale
+	// An explicit --plan that does not exist is still an error, since that is a usage
+	// mistake and should not be silently swapped for the built-in
 	if _, err := os.Stat(path); err != nil {
-		return nil, path, fmt.Errorf(`找不到补丁计划清单 %s
-
-补丁计划描述「往哪个文件的哪个锚点插什么」，业务模板的具体形态由各项目自己的清单给出
-用 --plan <file> 指定清单路径，或在项目根目录放一份 %s`, path, plan.DefaultFileName)
+		if e.opts.PlanFile != "" {
+			return nil, path, fmt.Errorf("找不到 --plan 指定的补丁计划清单 %s", path)
+		}
+		raw, err := builtin.Manifest()
+		if err != nil {
+			return nil, builtin.Origin, fmt.Errorf("读取内置补丁计划失败: %w", err)
+		}
+		m, err := plan.Parse(raw, builtin.Origin)
+		if err != nil {
+			return nil, builtin.Origin, err
+		}
+		return m, builtin.Origin, nil
 	}
 	m, err := plan.Load(path)
 	if err != nil {

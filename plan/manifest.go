@@ -43,6 +43,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/kamalyes/kronos-codegen/builtin"
 	"github.com/kamalyes/kronos-codegen/patch"
 )
 
@@ -150,6 +151,57 @@ type Step struct {
 	// Values json_key 按语言给出的译文，键是文件名去掉扩展名后的语言码
 	// [EN] Values maps a locale code to its translation for json_key
 	Values map[string]string `json:"values,omitempty"`
+	// Group 把若干条目绑成一次编辑：同组里有一条因锚点不存在被跳过，整组一起跳
+	//
+	// 这个字段是实测逼出来的 service/exports.go 要同时接三处：import 别名、
+	// type 别名、var 构造别名 其中 import 靠兄弟导入定位、另两个靠标记注释定位，
+	// 于是在没加标记的项目里 import 进去了、用它的两个别名没进去 ——
+	// 生成出来的代码编译不过：imported as widgetsvc and not used
+	//
+	// 部分接线比不接线更糟：不接线是人工补一下，部分接线是先弄坏再让人修
+	//
+	// [EN] Group binds several steps into one edit: if any of them is skipped because its
+	// anchor is absent, the whole group is skipped
+	// This field came out of a measurement Wiring service/exports.go means three steps at
+	// once, an import alias located by a sibling import plus a type alias and a constructor
+	// alias located by a marker comment, so in a project without the marker the import
+	// landed while the two aliases that use it did not, and the generated code failed to
+	// compile with "imported as widgetsvc and not used"
+	// Partial wiring is worse than none: none leaves a manual step, partial breaks the build first
+	Group string `json:"group,omitempty"`
+
+	// When 指定一个模板变量名，该变量为空时跳过这一条
+	//
+	// Optional 管的是「文件不存在」，When 管的是「数据不够」 两者缺一不可：
+	// pbmo 的注册语句要用契约包的别名，不给 --pb 时那个别名是空的，插出来的是
+	// 一条 pbmo.Register[models.XModel, .XInfo]() 这样编译不过的语句
+	// 与其生成坏代码，不如在数据不够时就不插
+	//
+	// [EN] When names a template variable and skips the step while that variable is empty
+	// Optional covers an absent file and When covers absent data, and both are needed: the
+	// pbmo registration statement uses the contract package's alias, which is empty without
+	// --pb and would insert pbmo.Register[models.XModel, .XInfo](), a statement that does
+	// not compile
+	// Rather than generate broken code, the step is skipped while the data is missing
+	When string `json:"when,omitempty"`
+
+	// Optional 目标文件不存在时跳过这一条，而不是报错
+	//
+	// 内置清单要覆盖形态略有差异的项目：有的服务没有 migrations、没有 locales
+	// 这些条目缺一条不该让整次生成失败
+	//
+	// 只对「文件不存在」生效 文件在、锚点找不到仍然是硬失败：那说明项目的
+	// 结构和清单的假设真的对不上，静默跳过会让人以为接线成功了
+	//
+	// [EN] Optional skips the step when its target file is absent rather than failing
+	// A built-in manifest has to cover projects whose shape differs slightly, where a
+	// service may have no migrations or no locales, and one such entry missing should not
+	// fail the whole generation
+	// It applies only to an absent file: a file that exists with an anchor that cannot be
+	// found is still a hard failure, since that means the project's structure genuinely
+	// disagrees with the manifest and skipping silently would suggest the wiring succeeded
+	Optional bool `json:"optional,omitempty"`
+
 	// Fallback Values 里缺失的语言用的兜底译文
 	// [EN] Fallback is used for locales missing from Values
 	Fallback string `json:"fallback,omitempty"`
@@ -162,6 +214,12 @@ func Load(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取补丁计划 %s 失败: %w", path, err)
 	}
+	return Parse(raw, path)
+}
+
+// Parse 解析清单字节并做基础校验，origin 只用于错误信息（可以不是磁盘路径）
+// [EN] Parse validates manifest bytes; origin appears in errors and need not be a disk path
+func Parse(raw []byte, path string) (*Manifest, error) {
 	var m Manifest
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -262,12 +320,55 @@ func (s Step) validate() error {
 // [EN] Actions expands one section into steps. create_file steps are always hoisted to the
 // front regardless of where they appear in the manifest (order is kept within each group),
 // so a dry-run reads as "these files were created, then these entries were inserted".
-func (m *Manifest) Actions(section string, vars map[string]string, root string) ([]patch.Action, error) {
+// Item 一条展开后的动作，连同它的 optional 标记
+//
+// 调用方需要这个标记：optional 的条目在「锚点不存在」时应当跳过并汇报，而不是
+// 让整次生成失败 实测过为什么必须这样 —— service/exports.go 的别名块要靠标记
+// 注释定位，而四个真实服务里有两个还没加标记，硬失败会把它们完全挡住，
+// 连本来能接的那几处也写不进去
+//
+// 跳过不是静默：每一条的结果都会打出来，末尾还会单独汇总哪些被跳过
+//
+// [EN] Item is one expanded action together with its optional flag
+// The caller needs that flag, since an optional step whose anchor cannot be located should
+// be skipped and reported rather than failing the whole generation
+// Measured why this is necessary: the alias blocks in service/exports.go are located by a
+// marker comment, and two of the four real services have not added one yet, so a hard
+// failure would block them entirely, including the wiring that would have worked
+// A skip is not silent: every step's outcome is printed and the skipped ones are summarised
+type Item struct {
+	Action   patch.Action
+	Optional bool
+	Group    string
+}
+
+// Items 展开一个分组，返回带 optional 标记的动作
+// [EN] Items expands a section into actions carrying their optional flag
+func (m *Manifest) Items(section string, vars map[string]any, root string) ([]Item, error) {
+	acts, opts, groups, err := m.expand(section, vars, root)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Item, 0, len(acts))
+	for i, a := range acts {
+		out = append(out, Item{Action: a, Optional: opts[i], Group: groups[i]})
+	}
+	return out, nil
+}
+
+// Actions 展开一个分组，只要动作本身
+// [EN] Actions expands a section and returns the actions alone
+func (m *Manifest) Actions(section string, vars map[string]any, root string) ([]patch.Action, error) {
+	acts, _, _, err := m.expand(section, vars, root)
+	return acts, err
+}
+
+func (m *Manifest) expand(section string, vars map[string]any, root string) ([]patch.Action, []bool, []string, error) {
 	steps, ok := m.Sections[section]
 	if !ok {
-		return nil, fmt.Errorf("补丁计划里没有 sections.%s，现有分组: %s", section, strings.Join(m.SectionNames(), ", "))
+		return nil, nil, nil, fmt.Errorf("补丁计划里没有 sections.%s，现有分组: %s", section, strings.Join(m.SectionNames(), ", "))
 	}
-	merged := map[string]string{}
+	merged := map[string]any{}
 	for k, v := range m.Vars {
 		merged[k] = v
 	}
@@ -276,27 +377,53 @@ func (m *Manifest) Actions(section string, vars map[string]string, root string) 
 	}
 
 	var creates, patches []patch.Action
+	var createOpt, patchOpt []bool
+	var createGrp, patchGrp []string
 	for i, raw := range steps {
+		// when 的判断必须在模板展开之前
+		//
+		// 被 when 挡住的条目，缺的正是它模板里要用的那个变量 先展开就会撞上
+		// missingkey=error，于是 when 永远等不到生效的机会
+		// 实测：gating_test 里 PbAlias 缺席的用例就是这么失败的
+		//
+		// [EN] The when check has to precede template expansion
+		// A step gated by when is missing exactly the variable its template uses, so
+		// expanding first hits missingkey=error and when never gets its chance
+		// Measured: the absent-PbAlias case in gating_test failed this way
+		if raw.When != "" && isBlankVar(merged[raw.When]) {
+			continue
+		}
 		s, err := expandStep(raw, merged)
 		if err != nil {
-			return nil, fmt.Errorf("sections.%s[%d] 模板展开失败: %w", section, i, err)
+			return nil, nil, nil, fmt.Errorf("sections.%s[%d] 模板展开失败: %w", section, i, err)
+		}
+		if s.Optional && !s.targetExists(root) {
+			continue
 		}
 		as, err := s.actions(root, merged)
 		if err != nil {
-			return nil, fmt.Errorf("sections.%s[%d] 展开失败: %w", section, i, err)
+			return nil, nil, nil, fmt.Errorf("sections.%s[%d] 展开失败: %w", section, i, err)
 		}
 		if s.Kind == "create_file" {
 			creates = append(creates, as...)
+			for range as {
+				createOpt = append(createOpt, s.Optional)
+				createGrp = append(createGrp, s.Group)
+			}
 			continue
 		}
 		patches = append(patches, as...)
+		for range as {
+			patchOpt = append(patchOpt, s.Optional)
+			patchGrp = append(patchGrp, s.Group)
+		}
 	}
-	return append(creates, patches...), nil
+	return append(creates, patches...), append(createOpt, patchOpt...), append(createGrp, patchGrp...), nil
 }
 
 // actions 把一条步骤展开成一条或多条引擎步骤
 // [EN] actions expands one step into one or more engine actions
-func (s Step) actions(root string, vars map[string]string) ([]patch.Action, error) {
+func (s Step) actions(root string, vars map[string]any) ([]patch.Action, error) {
 	switch s.Kind {
 	case "create_file":
 		content, origin, err := s.newFileContent(root, vars)
@@ -368,11 +495,16 @@ func (s Step) actions(root string, vars map[string]string) ([]patch.Action, erro
 // [EN] newFileContent produces the content of a create_file step. A template is read from
 // the project and rendered with the same variables; inline content is already expanded.
 // Reading goes through patch.DirStore, which brings its root-escape guard along.
-func (s Step) newFileContent(root string, vars map[string]string) (content []byte, origin string, err error) {
+func (s Step) newFileContent(root string, vars map[string]any) (content []byte, origin string, err error) {
 	if s.Content != "" {
 		return []byte(s.Content), "内联内容", nil
 	}
-	raw, err := patch.NewDirStore(root).Read(s.Template)
+	var raw []byte
+	if builtin.IsRef(s.Template) {
+		raw, err = builtin.Read(s.Template)
+	} else {
+		raw, err = patch.NewDirStore(root).Read(s.Template)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("读取模板 %s 失败: %w", s.Template, err)
 	}
@@ -418,7 +550,7 @@ func (s Step) resolveFiles(root string) ([]string, error) {
 // 用反射遍历是为了以后加字段不会漏掉展开
 // [EN] expandStep runs every string field through text/template; reflection is used so a
 // newly added field cannot be forgotten
-func expandStep(s Step, vars map[string]string) (Step, error) {
+func expandStep(s Step, vars map[string]any) (Step, error) {
 	out := s
 	v := reflect.ValueOf(&out).Elem()
 	for i := 0; i < v.NumField(); i++ {
@@ -453,7 +585,7 @@ func expandStep(s Step, vars map[string]string) (Step, error) {
 
 // expandString 展开单个模板字符串，缺变量直接报错而不是悄悄留空
 // [EN] expandString expands one template string and fails loudly on a missing variable
-func expandString(s string, vars map[string]string) (string, error) {
+func expandString(s string, vars map[string]any) (string, error) {
 	if !strings.Contains(s, "{{") {
 		return s, nil
 	}
@@ -466,4 +598,40 @@ func expandString(s string, vars map[string]string) (string, error) {
 		return "", fmt.Errorf("模板 %q 展开失败: %w", s, err)
 	}
 	return b.String(), nil
+}
+
+// targetExists 报告步骤的目标文件在不在，供 Optional 判断
+// json_key 用 files 通配时，只要有一个文件命中就算存在
+//
+// [EN] targetExists reports whether the step's target file is present, for Optional
+// A json_key step with a files glob counts as present when any file matches
+func (s Step) targetExists(root string) bool {
+	if s.File != "" {
+		_, err := os.Stat(filepath.Join(root, s.File))
+		return err == nil
+	}
+	for _, pattern := range s.Files {
+		matches, err := filepath.Glob(filepath.Join(root, pattern))
+		if err == nil && len(matches) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// isBlankVar 报告一个模板变量算不算「没有值」
+// 字符串看空串，布尔看 false，缺席也算没有值
+//
+// [EN] isBlankVar reports whether a template variable counts as having no value: an empty
+// string, a false boolean, or an absent key
+func isBlankVar(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case bool:
+		return !t
+	}
+	return false
 }

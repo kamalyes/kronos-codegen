@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kamalyes/kronos-codegen/pbfield"
 	"github.com/kamalyes/kronos-codegen/plan"
 )
 
@@ -106,7 +107,7 @@ func (e *env) checkEntity(m *plan.Manifest, root, entity string) int {
 		fmt.Fprintf(e.err, "%v\n", err)
 		return exitUsage
 	}
-	actions, err := m.Actions("entity", entityVars(entity, e.opts.Vars), root)
+	actions, err := m.Actions("entity", entityVars(entity, e.opts.Vars, nil), root)
 	if err != nil {
 		fmt.Fprintf(e.err, "%v\n", err)
 		return exitFailure
@@ -153,10 +154,42 @@ func containsTemplate(s string) bool {
 
 // entityVars 合并实体派生变量与命令行附加变量，命令行优先
 // [EN] entityVars merges the derived entity variables with the command line ones
-func entityVars(name string, extra map[string]string) map[string]string {
-	vars := plan.Vars(name)
-	for k, v := range extra {
-		vars[k] = v
+// entityVars 拼出模板数据：实体名派生的变量、命令行 --var、以及可选的字段表
+//
+// 返回 map[string]any 而不是 map[string]string，是为了让字段表能进模板：
+// 模型文件要按 proto 的字段逐个生成列，而字段表是结构体切片不是字符串
+// 步骤里的文件路径、锚点名这些仍然只用到字符串键，两者共用同一份数据
+//
+// [EN] Builds the template data: the variables derived from the entity name, the --var
+// flags, and an optional field table
+// The return is map[string]any rather than map[string]string so the field table can reach
+// the templates, since a model file generates one column per proto field and the table is
+// a slice of structs rather than a string
+// Step fields such as paths and anchor names still use only the string keys, and both
+// share one data set
+func entityVars(name string, extra map[string]string, fields any) map[string]any {
+	out := map[string]any{}
+	for k, v := range plan.Vars(name) {
+		out[k] = v
 	}
-	return vars
+	for k, v := range extra {
+		out[k] = v
+	}
+	// Fields 与 Imports 一律给出，没有契约时是空的
+	//
+	// 模板的变量展开用 missingkey=error：键不存在会直接报错而不是展开成空串
+	// 这是刻意的（写错变量名要立刻暴露），但它要求「可选的数据」也必须在场
+	// 实测过：不给 --pb 时 Fields 缺席，内置模型模板直接渲染失败
+	//
+	// [EN] Fields and Imports are always present and empty when there is no contract
+	// Template expansion runs with missingkey=error so an absent key fails loudly rather
+	// than expanding to an empty string, which is deliberate for catching typos in variable
+	// names but requires optional data to be present as well
+	// Measured: without --pb the Fields key was absent and the built-in model template
+	// failed to render
+	out["Fields"] = fields
+	if fields == nil {
+		out["Fields"] = []pbfield.ModelField{}
+	}
+	return out
 }

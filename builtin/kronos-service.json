@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "sections": {
+    "entity": [
+      {
+        "kind": "create_file",
+        "file": "models/{{.Snake}}_model.go",
+        "template": "builtin:templates/model.go.tmpl"
+      },
+      {
+        "kind": "create_file",
+        "file": "repository/{{.Snake}}_repository.go",
+        "template": "builtin:templates/repository.go.tmpl"
+      },
+      {
+        "kind": "create_file",
+        "file": "service/{{.Snake}}/{{.Snake}}_service.go",
+        "template": "builtin:templates/service.go.tmpl"
+      },
+      {
+        "kind": "var",
+        "file": "models/table_names.go",
+        "name": "TableName{{.Name}}",
+        "value": "{{.Name}}Model{}.TableName()"
+      },
+      {
+        "kind": "struct_field",
+        "file": "repository/factory.go",
+        "struct": "RepositoryFactory",
+        "name": "{{.Name}}",
+        "type": "*{{.Name}}Repository"
+      },
+      {
+        "kind": "composite_field",
+        "file": "repository/factory.go",
+        "func": "NewRepositoryFactory",
+        "type": "RepositoryFactory",
+        "key": "{{.Name}}",
+        "value": "New{{.Name}}Repository()"
+      },
+      {
+        "kind": "slice_append",
+        "file": "migrations/auto_migrate.go",
+        "func": "GetAllModels",
+        "element": "&models.{{.Name}}Model{}",
+        "optional": true
+      },
+      {
+        "kind": "import",
+        "file": "service/exports.go",
+        "import": "{{.Module}}/service/{{.Snake}}",
+        "alias": "{{.Flat}}svc",
+        "optional": true,
+        "near": "{{.Module}}/service/common",
+        "group": "exports"
+      },
+      {
+        "kind": "type",
+        "file": "service/exports.go",
+        "name": "{{.Name}}ServiceImpl",
+        "value": "{{.Flat}}svc.{{.Name}}ServiceImpl",
+        "optional": true,
+        "marker": "kronos:exports",
+        "group": "exports"
+      },
+      {
+        "kind": "var",
+        "file": "service/exports.go",
+        "name": "New{{.Name}}Service",
+        "value": "{{.Flat}}svc.New{{.Name}}Service",
+        "optional": true,
+        "marker": "kronos:exports",
+        "group": "exports"
+      },
+      {
+        "kind": "stmt",
+        "file": "bootstrap/pbmo.go",
+        "func": "registerConverters",
+        "stmt": "pbmo.Register[models.{{.Name}}Model, {{.PbAlias}}.{{.Name}}Info]()",
+        "when": "PbAlias",
+        "optional": true
+      },
+      {
+        "kind": "json_key",
+        "files": [
+          "locales/*.json"
+        ],
+        "parent": [
+          "error"
+        ],
+        "key": "{{.Snake}}_not_found",
+        "fallback": "{{.Name}} not found",
+        "optional": true
+      }
+    ]
+  }
+}

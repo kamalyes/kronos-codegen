@@ -123,3 +123,21 @@ func isAllUpper(r []rune) bool {
 	}
 	return true
 }
+
+// Data 把实体名派生的变量提升成模板数据
+//
+// 模板数据是 map[string]any 而不是 map[string]string，因为模型文件要按 proto
+// 字段逐列生成，字段表是结构体切片 这个辅助让「只需要名字派生变量」的调用方
+// 不必每次自己转一遍
+//
+// [EN] Data lifts the variables derived from an entity name into template data
+// The data is map[string]any rather than map[string]string because a model file generates
+// one column per proto field and the field table is a slice of structs; this helper saves
+// callers that need only the name-derived variables from converting every time
+func Data(name string) map[string]any {
+	out := map[string]any{}
+	for k, v := range Vars(name) {
+		out[k] = v
+	}
+	return out
+}

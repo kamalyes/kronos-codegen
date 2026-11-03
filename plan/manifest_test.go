@@ -93,7 +93,7 @@ func TestPatchesTemplateAndGlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	patches, err := m.Actions("entity", Vars("OrderItem"), root)
+	patches, err := m.Actions("entity", Data("OrderItem"), root)
 	if err != nil {
 		t.Fatalf("展开失败: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestPatchesMissingVar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	if _, err := m.Actions("entity", Vars("Order"), root); err == nil {
+	if _, err := m.Actions("entity", Data("Order"), root); err == nil {
 		t.Fatalf("预期报错，实际成功")
 	} else if !strings.Contains(err.Error(), "NoSuchVar") {
 		t.Errorf("错误信息里应当提到变量名，实际为 %q", err.Error())
@@ -183,9 +183,9 @@ func TestPatchesImportAndTypeKinds(t *testing.T) {
       {
         "kind": "import",
         "file": "service/exports.go",
-        "import": "github.com/HitGameAI/apex-notify-service/service/{{.Snake}}",
+        "import": "github.com/example/demo-service/service/{{.Snake}}",
         "alias": "{{.Flat}}svc",
-        "near": "github.com/HitGameAI/apex-notify-service/service/notify"
+        "near": "github.com/example/demo-service/service/notify"
       },
       {
         "kind": "type",
@@ -208,12 +208,12 @@ func TestPatchesImportAndTypeKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	patches, err := m.Actions("entity", Vars("NotifyTemplate"), root)
+	patches, err := m.Actions("entity", Data("NotifyTemplate"), root)
 	if err != nil {
 		t.Fatalf("展开失败: %v", err)
 	}
 	wantLabels := []string{
-		`import notifytemplatesvc "github.com/HitGameAI/apex-notify-service/service/notify_template"`,
+		`import notifytemplatesvc "github.com/example/demo-service/service/notify_template"`,
 		"type NotifyTemplateServiceImpl",
 		"var NewNotifyTemplateService",
 	}
@@ -260,7 +260,7 @@ func ({{.Name}}Model) TableName() string { return "{{.Snake}}s" }
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	actions, err := m.Actions("entity", Vars("OrderItem"), root)
+	actions, err := m.Actions("entity", Data("OrderItem"), root)
 	if err != nil {
 		t.Fatalf("展开失败: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestCreateFileTemplateErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	if _, err := m.Actions("entity", Vars("Order"), root); err == nil {
+	if _, err := m.Actions("entity", Data("Order"), root); err == nil {
 		t.Fatalf("模板文件不存在时应当报错")
 	} else if !strings.Contains(err.Error(), "读取模板") {
 		t.Errorf("错误信息不够清楚: %v", err)
@@ -323,7 +323,7 @@ func TestCreateFileTemplateErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	if _, err := m2.Actions("entity", Vars("Order"), root); err == nil || !strings.Contains(err.Error(), "不合法") {
+	if _, err := m2.Actions("entity", Data("Order"), root); err == nil || !strings.Contains(err.Error(), "不合法") {
 		t.Errorf("模板语法错误应当报错，实际 %v", err)
 	}
 
@@ -338,7 +338,7 @@ func TestCreateFileTemplateErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("载入失败: %v", err)
 	}
-	if _, err := m3.Actions("entity", Vars("Order"), root); err == nil || !strings.Contains(err.Error(), "NoSuchVar") {
+	if _, err := m3.Actions("entity", Data("Order"), root); err == nil || !strings.Contains(err.Error(), "NoSuchVar") {
 		t.Errorf("模板引用未知变量应当报错，实际 %v", err)
 	}
 }

@@ -373,7 +373,13 @@ func TestUsageAndErrors(t *testing.T) {
 		{"实体名小写开头", []string{"new", "entity", "order", "--root", root}, exitUsage, "必须以大写字母开头"},
 		{"实体名不合法", []string{"new", "entity", "Order-X", "--root", root}, exitUsage, "不是合法的 Go 标识符"},
 		{"根目录不存在", []string{"new", "entity", "Order", "--root", filepath.Join(root, "nope")}, exitUsage, "不存在或不是目录"},
-		{"缺少补丁计划", []string{"new", "entity", "Order", "--root", empty}, exitFailure, "找不到补丁计划清单"},
+		// 项目没放清单时走内置清单，而不是报错让人从零写一份
+		// 空目录下内置清单仍会失败，但失败的原因是被接线的文件不存在，而不是没有清单
+		// [EN] A project without a manifest uses the built-in one instead of failing and
+		// asking for one to be written from scratch; in an empty directory it still fails,
+		// but because the files to wire into are absent rather than because no manifest exists
+		{"缺少补丁计划时走内置", []string{"new", "entity", "Order", "--root", empty}, exitFailure, "内置 kronos-service"},
+		{"--plan 指向不存在的文件", []string{"new", "entity", "Order", "--root", empty, "--plan", "/nope-does-not-exist.json"}, exitFailure, "找不到 --plan 指定的补丁计划清单"},
 		{"格式化策略不合法", []string{"new", "entity", "Order", "--root", root, "--format", "wat"}, exitUsage, "未知的格式化策略"},
 		{"多余参数", []string{"new", "entity", "Order", "extra", "--root", root}, exitUsage, "多余的参数"},
 	}
