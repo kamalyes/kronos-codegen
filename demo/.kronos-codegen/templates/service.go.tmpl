@@ -1,0 +1,21 @@
+package {{.Snake}}
+
+{{if .HasService}}import (
+	{{.PbAlias}} "{{.PbImport}}"
+)
+
+{{end}}// {{.Name}}ServiceImpl {{.Name}} 领域服务
+{{if .HasService}}// 契约里有 {{.Name}}Service，所以嵌了未实现桩：服务当场满足 gRPC 接口、可直接注册
+// [EN] The contract has {{.Name}}Service, so the unimplemented stub is embedded and the
+// service satisfies the gRPC interface immediately
+{{else}}// 契约里没有 {{.Name}}Service，所以没有嵌未实现桩
+// [EN] The contract has no {{.Name}}Service, so no stub is embedded
+{{end}}type {{.Name}}ServiceImpl struct {
+{{- if .HasService}}
+	{{.PbAlias}}.Unimplemented{{.Name}}ServiceServer
+{{- end}}
+}
+
+// New{{.Name}}Service 创建领域服务
+// [EN] New{{.Name}}Service builds the domain service
+func New{{.Name}}Service() *{{.Name}}ServiceImpl { return &{{.Name}}ServiceImpl{} }

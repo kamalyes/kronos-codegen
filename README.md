@@ -18,15 +18,19 @@
 
 | 文档 \| Document | 内容 \| Contents |
 | --- | --- |
-| [清单参考 \| Manifest reference](./docs/MANIFEST.md) | `.kronos-codegen.json` 的顶层结构、模板变量、锚点字段,以及九种 `kind` 逐个的字段表与示例 |
+| [清单参考 \| Manifest reference](./docs/MANIFEST.md) | `.kronos-codegen.json` 的顶层结构、模板变量、锚点字段与免锚点规则、三个闸门字段,以及九种 `kind` 逐个的字段表与示例 |
+| [可运行例子 \| Runnable demo](./demo/README.md) | 自带契约的最小项目:一条命令建 3 个文件、接线 9 处,生成出来的代码能编译 复位脚本可反复演示 |
 
 ### 📂 代码位置 | Code layout
 
 | 位置 \| Location | 内容 \| Contents |
 | --- | --- |
 | [`patch/`](./patch) | 幂等补丁引擎：AST 定位插入点 + 字节级文本拼接、七类插入、unified diff、原子写盘 |
-| [`plan/`](./plan) | 声明式清单(`.kronos-codegen.json`)的解析与展开、实体名的命名派生 |
-| `main.go` / `cli.go` / `new.go` / `check.go` | 命令行外壳：全局 flag、子命令编排、确认与输出 |
+| [`plan/`](./plan) | 声明式清单(`.kronos-codegen.json`)的解析与展开、实体名的命名派生、三个闸门字段 |
+| [`pbfield/`](./pbfield) | 从 protoc 生成的 `.pb.go` 里提取消息字段,映射成 GORM 模型字段;推断契约包的导入路径与别名、探测有没有对应的 gRPC 服务 |
+| [`builtin/`](./builtin) | 内置的补丁计划与三个模板,用 `go:embed` 嵌进二进制 |
+| [`demo/`](./demo) | 可运行的最小例子,自带一份零外部依赖的假契约 |
+| `main.go` / `cli.go` / `new.go` / `check.go` / `init.go` | 命令行外壳：全局 flag、子命令编排、确认与输出 |
 
 - [📖 API 文档 \| API reference](https://pkg.go.dev/github.com/kamalyes/kronos-codegen)
 - [🐛 问题反馈 \| Issues](https://github.com/kamalyes/kronos-codegen/issues)
@@ -45,6 +49,9 @@
 - 📐 **排版可控 | Controlled formatting** — `--format if-clean`(默认)只在原文件本身已经 gofmt 干净时才做归一化，手工排版的文件永远不会被整体重排
 - 📦 **零三方依赖 | Zero dependencies** — 只用 Go 标准库，没有 `go.sum`
 - 🔌 **引擎可复用 | Reusable engine** — `patch` 与 `plan` 是普通的公开包，别的工具可以直接 import
+- 📥 **内置清单 | Built-in manifest** — 约定形态的服务**零配置可用**，不必先写一份清单；项目放一份自己的就整体覆盖，`init` 可以把内置的取出来改
+- 🧾 **字段来自契约 | Fields from the contract** — `--pb` 指向 protoc 生成的 `.pb.go`，模型按契约的字段生成，连双语注释一起带过来；读 `.pb.go` 而不是 `.proto` 是为了直接用 protoc 的类型映射，不可能与它不一致，也不必为解析 proto 文法引一条重依赖
+- 🚧 **三个闸门 | Three gates** — `optional` 管文件不存在、`when` 管模板变量为空、`group` 管同组定位不到就整组跳过；最后一个是为了避免**部分接线**——不接线是留个人工步骤，部分接线是先把构建弄坏再让人修
 
 ## ⚠️ 六个必读行为 | Six behaviours to know first
 
@@ -90,7 +97,19 @@ kronos-codegen new entity Order --root ./my-service --yes
 
 # 4. 校验某个实体的条目是否都已落地 | check one entity for drift
 kronos-codegen check --entity Order --root ./my-service
+
+# 5. 按契约生成：模型字段取自 .pb.go 里的消息 | derive model fields from the contract
+kronos-codegen new entity Role --root ./my-service \
+  --pb ../share-proto/pb/common/user.pb.go --yes
 ```
+
+不给 `--pb` 时模型只生成骨架:字段是一个实体的实质,没有契约不该由生成器编出来
+
+[EN] Without `--pb` the model is a skeleton, since the fields are the substance of an entity
+and should not be invented by a generator
+
+想先看它跑起来再读文档,去 [demo/](./demo/):一条命令新建 3 个文件、往 6 个已存在的
+文件里插 9 处条目,**生成出来的代码能编译**
 
 ## 🖥️ 命令与全局 flag | Commands and global flags
 
@@ -138,27 +157,50 @@ kronos-codegen new entity Order --root ./svc --dry-run
 
 ## 📋 补丁计划清单 | The patch manifest
 
-「往哪个文件的哪个锚点插什么」全部外置在项目根目录的 `.kronos-codegen.json` 里,本仓库**不内置任何业务清单**——每个工程的文件形态不一样,清单跟着工程走
+「往哪个文件的哪个锚点插什么」写在补丁计划清单里 清单按这个顺序取:
 
-[EN] The "insert what, where" decision lives entirely in `.kronos-codegen.json` at the project root. This repository ships no business manifest on purpose: file shapes differ per project, so the manifest belongs to the project.
+| 优先级 | 来源 | 说明 |
+| --- | --- | --- |
+| 1 | `--plan <file>` | 显式指定 指定了却找不到文件是用法错误,直接报错而不是悄悄换成内置的 |
+| 2 | `<root>/.kronos-codegen.json` | 项目自己的清单,**整体覆盖**内置的那份 |
+| 3 | 内置清单 | 覆盖 kronos 形态的服务,**零配置可用** |
 
-一个最小例子:
+[EN] The manifest is resolved in that order: an explicit `--plan`, then the project's own
+`.kronos-codegen.json` which overrides the built-in wholesale, then the built-in manifest
 
-```json
-{
-  "version": 1,
-  "sections": {
-    "entity": [
-      { "kind": "var", "file": "models/table_names.go", "member": "TableNameExample",
-        "name": "TableName{{.Name}}", "value": "{{.Name}}Model{}.TableName()" },
-      { "kind": "json_key", "files": ["locales/*.json"], "parent": ["error"],
-        "key": "{{.Snake}}_not_found", "fallback": "{{.Name}} not found" }
-    ]
-  }
-}
+### 内置清单凭什么成立 | Why a built-in manifest works
+
+因为这套服务的锚点全是**约定名**而不是项目特有的名字 逐个核对过线上服务与
+`kronos-service-template`:仓库工厂一律叫 `RepositoryFactory` / `NewRepositoryFactory`,
+迁移清单一律叫 `GetAllModels`,`models/table_names.go` 一律只有一个 `var` 块
+(所以那一条可以免锚点,见 [docs/MANIFEST.md](./docs/MANIFEST.md#免锚点--anchorless))
+
+清单里刻意不含任何具体业务列名 早先的模型模板写死过 `tenant_id`,那是把某个产品的
+租户模型焊进了一个通用工具 —— 别的项目用 `org_id`、或者没有租户维度
+
+[EN] It works because this service shape anchors entirely on convention names rather than
+project-specific ones, verified one by one against the production services and the template
+The manifest deliberately contains no business column name, since an earlier model template
+hardcoded `tenant_id` and that welded one product's tenancy model into a general tool
+
+### 形态不一样怎么办 | When your project differs
+
+```bash
+kronos-codegen init           # 把内置清单与模板取进项目，改成本项目的形态
+kronos-codegen init --dry-run # 先看会写哪些文件
 ```
 
-**九种 `kind` 的完整字段、锚点语义、模板变量对照表见 [docs/MANIFEST.md](./docs/MANIFEST.md)**
+`init` 会把清单落在 `.kronos-codegen.json`、模板落在 `.kronos-codegen/templates/`,
+并把清单里的 `builtin:` 模板引用改写成取出来的那份路径 —— 否则改了模板不生效
+
+[EN] `init` copies the manifest and templates into the project and rewrites the `builtin:`
+references to the copied paths, since a copied manifest still pointing into the binary would
+ignore edits to the copied templates
+
+**九种 `kind` 的完整字段、四种锚点、免锚点规则、三个闸门字段(`optional` / `when` /
+`group`)与模板变量对照表见 [docs/MANIFEST.md](./docs/MANIFEST.md)**
+
+**想直接看它跑起来:[demo/](./demo/) 是一个自带契约、能生成也能编译的最小例子**
 
 ## 🔍 dry-run 与 check | Preview and drift check
 
@@ -203,7 +245,7 @@ kronos-codegen check --entity Order --root ./my-service
 
 ## 🔌 当库使用 | Using it as a library
 
-`patch` 和 `plan` 是普通的公开包，补丁引擎本身与 kronos / apex 没有任何耦合：
+`patch` 和 `plan` 是普通的公开包，补丁引擎本身不与任何具体项目耦合：
 
 ```go
 import "github.com/kamalyes/kronos-codegen/patch"

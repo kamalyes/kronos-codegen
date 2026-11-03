@@ -44,6 +44,21 @@
 | `{{.Flat}}` | `order` | `orderitem` | `httpserver` |
 | `{{.Delimited}}` | `order` | `order.item` | `http.server` |
 
+给了 `--pb` 之后还会多出这几个变量，它们都是从那一个入参推出来的，不需要额外传:
+
+| 变量 \| Variable | 来源 \| Source | 例 \| Example |
+| --- | --- | --- |
+| `{{.Fields}}` | 契约消息的字段表，元素含 `Name` / `Type` / `Column` / `Tag` / `JSONTag` / `Comment` | 用 `{{range .Fields}}` 遍历 |
+| `{{.Imports}}` | 从字段类型反推出的导入清单 | `["time", "…/pb/enums"]` |
+| `{{.PbImport}}` | 契约包的导入路径，往上找契约仓库的 `go.mod` 得到 | `…/apex-share-proto/pb/common` |
+| `{{.PbAlias}}` | 导入别名，目录名加 `pb` | `commonpb` |
+| `{{.HasService}}` | 契约里有没有同名 gRPC 服务，看同目录 `*_grpc.pb.go` 里有没有 `Unimplemented<名字>ServiceServer` | `true` / `false` |
+| `{{.Module}}` | 本项目的模块路径，取自项目根目录的 `go.mod`，`--var Module=` 可覆盖 | `github.com/acme/my-service` |
+
+没给 `--pb` 时 `Fields` 与 `Imports` 是空的、`PbImport` / `PbAlias` 是空串、
+`HasService` 是 `false`：它们**一律在场**而不是缺席，因为模板展开用
+`missingkey=error`，缺席会直接报错而不是展开成空串
+
 ## 锚点字段 | Anchor fields
 
 | 字段 \| Field | 适用 \| Applies to | 含义 \| Meaning |
@@ -56,6 +71,56 @@
 | `var` | `slice_append` | 包级变量名，其值是切片字面量 |
 
 `slice_append` 的锚点优先级是 `marker` > `near` > `var` > `func`,`stmt` 的是 `marker` > `near` > `func`
+
+### 免锚点 | Anchorless
+
+`const` / `var` / `type` 在**文件里只有一个带括号的同类块**时可以不给锚点
+
+这一条是为了让内置清单成立:内置清单不可能知道各项目已有的成员名
+(`models/table_names.go` 里一个项目的第一条叫 `TableNameNotifyRecord`、另一个叫
+`TableNameRole`),而这类文件按约定全文件只有一个 `var` 块
+
+有多个同类块时仍然报错,并把候选块的行号列出来 —— 这种情况下猜哪个都是错的:
+
+```
+service/exports.go: 定位 type 块 失败: 文件里有 15 个 type 块（第 35 行、第 50 行、…），
+必须给出 Marker 或 Member 锚点
+```
+
+[EN] `const`, `var` and `type` may omit their anchor when the file holds exactly one
+parenthesized block of that kind, which is what makes a built-in manifest possible since it
+cannot know the member names a given project already has; several blocks still raise an
+error listing their line numbers, because guessing between them would be wrong either way
+
+## 闸门字段 | Gating fields
+
+三个字段各管一种「这一条不该执行」的情形,彼此不能互相替代:
+
+| 字段 \| Field | 跳过的条件 \| Skips when | 为什么需要它 \| Why |
+| --- | --- | --- |
+| `optional` | 目标**文件**不存在 | 项目形态有差异:网关没有 `repository/`,有的服务没有 `locales/` 这些条目缺一条不该让整次生成失败 |
+| `when` | 指定的模板**变量**为空(空串、`false` 或缺席) | pbmo 的注册语句要用契约包别名,不给 `--pb` 时它是空的,插出来是 `pbmo.Register[models.XModel, .XInfo]()` 这种编译不过的语句 |
+| `group` | 同组里**任一条**因锚点不存在被跳过 | `service/exports.go` 要同时接 import 别名、`type` 别名、`var` 别名三处 import 靠兄弟导入定位、另两个靠标记注释定位,在没加标记的项目里会出现「import 进去了、用它的别名没进去」,生成的代码编译不过 |
+
+几条要点:
+
+- **`optional` 只对「文件不存在」生效** 文件在、锚点找不到仍然是硬失败,
+  那说明项目结构与清单的假设真的对不上,静默跳过会让人以为接线成功了
+  —— 除非这一条同时带了 `group`,见下
+- **`when` 的判断在模板展开之前** 被它挡住的条目,缺的正是模板里要用的那个变量,
+  先展开就会撞上 `missingkey=error`
+- **被跳过的条目会打印并在末尾单独汇总**,写明「需要人工接线」 跳过不是静默降级
+- **部分接线比不接线更糟**:不接线是留个人工步骤,部分接线是先把构建弄坏再让人修
+  这就是 `group` 存在的全部理由
+
+[EN] The three gating fields each cover a different reason a step should not run and none
+substitutes for another: `optional` for an absent file, `when` for an empty template
+variable, and `group` for a sibling step that cannot be located
+`optional` applies only to an absent file, since a file that exists with an anchor that
+cannot be found means the project genuinely disagrees with the manifest; `when` is evaluated
+before template expansion because the gated step is missing exactly the variable its
+template uses; skipped steps are printed and summarised as needing manual wiring; and
+partial wiring is worse than none, which is the entire reason `group` exists
 
 ## 每种 kind 的字段 | Fields per kind
 
@@ -72,7 +137,7 @@
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `file` | 是 | 要新建的文件相对路径，父目录不存在会自动创建 |
-| `template` | 与 `content` 二选一 | 项目内模板文件的相对路径，内容用 `text/template` 和同一套变量渲染 |
+| `template` | 与 `content` 二选一 | 模板文件路径，内容用 `text/template` 和同一套变量渲染 项目内的写相对路径;写成 `builtin:templates/model.go.tmpl` 则取二进制里内置的那份(`kronos-codegen init` 可以把内置模板取进项目再改) |
 | `content` | 与 `template` 二选一 | 直接内联新文件的内容，同样会过一遍模板展开 |
 
 模板放在项目里而不是内置在 codegen 里，取向与清单外置一致：每个工程的文件形态不一样，模板跟着工程走，约定俗成的位置是 `.kronos-codegen/templates/`，但路径由清单自己决定，只要不越出项目根目录

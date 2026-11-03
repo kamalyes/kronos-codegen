@@ -1,0 +1,11 @@
+package repository
+
+// {{.Name}}Repository {{.Name}} 仓库
+// demo 用的是简化形态：真实项目里这里会嵌 go-sqlbuilder 的 BaseRepository
+//
+// [EN] A simplified shape for the demo; a real project embeds go-sqlbuilder's BaseRepository
+type {{.Name}}Repository struct{}
+
+// New{{.Name}}Repository 创建仓库
+// [EN] New{{.Name}}Repository builds the repository
+func New{{.Name}}Repository() *{{.Name}}Repository { return &{{.Name}}Repository{} }

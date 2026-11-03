@@ -1,0 +1,25 @@
+package models
+
+{{if .Imports}}// 导入由生成器从字段类型反推：枚举这类限定名要带上它真实的包路径，
+// 漏掉就是 undefined 实测漏过一次，编译当场抓到
+//
+// [EN] The imports are derived from the field types, since a qualified name such as an enum
+// needs its real package path and omitting it is an undefined error
+// Measured: this block was once missing and the compiler caught it immediately
+import (
+{{- range .Imports}}
+	"{{.}}"
+{{- end}}
+)
+
+{{end}}// {{.Name}}Model {{.Name}} 实体，字段取自契约
+// [EN] The {{.Name}} entity with fields taken from the contract
+type {{.Name}}Model struct {
+{{- range .Fields}}
+	{{.Name}} {{.Type}} `gorm:"{{.Tag}}" json:"{{.JSONTag}}"`{{if .Comment}} // {{.Comment}}{{end}}
+{{- end}}
+}
+
+// TableName 返回表名
+// [EN] TableName returns the table name
+func ({{.Name}}Model) TableName() string { return "{{.Snake}}s" }
