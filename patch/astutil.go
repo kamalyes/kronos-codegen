@@ -244,9 +244,6 @@ func (r BlockRef) empty() bool { return r.Marker == "" && r.Member == "" }
 // [EN] findDeclBlock locates the parenthesized declaration block matching the anchor
 func (g *goFile) findDeclBlock(tok token.Token, ref BlockRef) (*ast.GenDecl, error) {
 	kind := strings.ToLower(tok.String()) + " 块"
-	if ref.empty() {
-		return nil, locateErr(g.path, kind, "必须给出 Marker 或 Member 锚点", ErrInvalidPatch)
-	}
 	var blocks []*ast.GenDecl
 	for _, d := range g.ast.Decls {
 		gd, ok := d.(*ast.GenDecl)
@@ -257,6 +254,42 @@ func (g *goFile) findDeclBlock(tok token.Token, ref BlockRef) (*ast.GenDecl, err
 	}
 	if len(blocks) == 0 {
 		return nil, locateErr(g.path, kind, fmt.Sprintf("文件里没有任何 %s 声明", tok.String()), ErrNotFound)
+	}
+
+	// 没给锚点时，文件里只有一个该种类的括号块就用它
+	//
+	// 这一条是为了让「内置清单」成立：内置清单不可能知道各项目已有的成员名
+	// （models/table_names.go 里一个项目叫 TableNameNotifyRecord、另一个叫
+	// TableNameRole），而这类文件按约定全文件只有一个 var 块
+	// 有多个时仍然报错并把候选列出来 —— 这种情况下猜哪个块都是错的
+	//
+	// [EN] With no anchor given, a file holding exactly one parenthesized block of that
+	// kind resolves to it
+	// This is what makes a built-in manifest possible: it cannot know the member names a
+	// given project already has, since models/table_names.go names its first entry
+	// TableNameNotifyRecord in one service and TableNameRole in another, while by
+	// convention such a file holds a single var block
+	// Several blocks still raise an error listing the candidates, because guessing between
+	// them would be wrong either way
+	if ref.empty() {
+		var paren []*ast.GenDecl
+		for _, gd := range blocks {
+			if gd.Lparen.IsValid() {
+				paren = append(paren, gd)
+			}
+		}
+		if len(paren) == 1 {
+			return paren[0], nil
+		}
+		if len(paren) == 0 {
+			return nil, locateErr(g.path, kind, fmt.Sprintf("文件里没有带括号的 %s 块，无法免锚点定位", tok.String()), ErrNotFound)
+		}
+		lines := make([]string, 0, len(paren))
+		for _, gd := range paren {
+			lines = append(lines, fmt.Sprintf("第 %d 行", g.fset.Position(gd.Pos()).Line))
+		}
+		return nil, locateErr(g.path, kind, fmt.Sprintf("文件里有 %d 个 %s 块（%s），必须给出 Marker 或 Member 锚点",
+			len(paren), tok.String(), strings.Join(lines, "、")), ErrInvalidPatch)
 	}
 
 	if ref.Marker != "" {

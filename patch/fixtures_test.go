@@ -37,6 +37,23 @@ const (
 const ServiceName = "demo"
 `
 
+// twoConstBlocksFixture 同一文件里两个带括号的 const 块
+// 用来钉住「免锚点只在唯一块时成立」：有两个时必须报歧义而不是挑一个
+//
+// [EN] Two parenthesized const blocks in one file, pinning that anchorless resolution
+// holds only for a sole block: with two of them an ambiguity error is required rather
+// than a guess
+const twoConstBlocksFixture = headerBlock + `package constants
+
+const (
+	TableNameExample = "examples"
+)
+
+const (
+	CacheKeyPrefix = "demo:"
+)
+`
+
 // factoryFixture 仓库工厂：struct 字段与构造函数初始化项成对出现
 // [EN] factoryFixture is a repository factory: struct fields paired with constructor items
 const factoryFixture = headerBlock + `package repository
@@ -142,9 +159,9 @@ const localeEmptyFixture = `{
 }
 `
 
-// exportsFixture 服务统一导出文件，形态对齐 apex-notify-service/service/exports.go
+// exportsFixture 服务统一导出文件，形态对齐线上服务的 service/exports.go
 // import 块按标准库 / 三方 / 内部分成三组，type 与 var 块做跨包别名
-// [EN] exportsFixture mirrors apex-notify-service/service/exports.go: a three-group import
+// [EN] exportsFixture mirrors a production service's service/exports.go: a three-group import
 // block plus type and var blocks holding cross-package aliases
 const exportsFixture = headerBlock + `package service
 
@@ -154,8 +171,8 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 
 // ============================================================

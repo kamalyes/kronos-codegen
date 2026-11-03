@@ -27,8 +27,8 @@ const (
 	// DeclVar var 块
 	// [EN] DeclVar targets a var block
 	DeclVar DeclKind = "var"
-	// DeclType type 块，apex 的 service/exports.go 用它做跨包别名
-	// [EN] DeclType targets a type block, used by apex for cross-package aliases
+	// DeclType type 块，服务的统一导出文件用它做跨包别名
+	// [EN] DeclType targets a type block, used by a service exports file for cross-package aliases
 	DeclType DeclKind = "type"
 )
 

@@ -117,6 +117,30 @@ const ServiceName = "demo"
 `,
 		},
 		{
+			name:   "const 块免锚点命中唯一的括号块",
+			before: constFixture,
+			patch: &DeclInsert{
+				Path:  "constants/table.go",
+				Name:  "TableNameOrder",
+				Value: `"orders"`,
+				Doc:   "TableNameOrder 订单表",
+			},
+			after: headerBlock + `package constants
+
+// 表名常量 kronos:consts=table-name
+const (
+	// TableNameExample 示例表
+	TableNameExample = "examples"
+	TableNameSecond  = "seconds" // 第二张表
+	// TableNameOrder 订单表
+	TableNameOrder = "orders"
+)
+
+// ServiceName 服务名
+const ServiceName = "demo"
+`,
+		},
+		{
 			name:   "const 块按已有成员名插入",
 			before: constFixture,
 			patch: &DeclInsert{
@@ -463,8 +487,8 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 ` + exportsTail,
 		},
@@ -473,9 +497,9 @@ import (
 			before: exportsFixture,
 			patch: &ImportInsert{
 				Path:   "service/exports.go",
-				Import: "github.com/HitGameAI/apex-notify-service/service/template",
+				Import: "github.com/example/demo-service/service/template",
 				Alias:  "templatesvc",
-				Near:   "github.com/HitGameAI/apex-notify-service/service/common",
+				Near:   "github.com/example/demo-service/service/common",
 			},
 			after: headerBlock + `package service
 
@@ -485,9 +509,9 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
-	templatesvc "github.com/HitGameAI/apex-notify-service/service/template"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
+	templatesvc "github.com/example/demo-service/service/template"
 )
 ` + exportsTail,
 		},
@@ -496,7 +520,7 @@ import (
 			before: exportsFixture,
 			patch: &ImportInsert{
 				Path:   "service/exports.go",
-				Import: "github.com/HitGameAI/apex-notify-service/service/template",
+				Import: "github.com/example/demo-service/service/template",
 				Alias:  "templatesvc",
 			},
 			after: headerBlock + `package service
@@ -507,9 +531,9 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
-	templatesvc "github.com/HitGameAI/apex-notify-service/service/template"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
+	templatesvc "github.com/example/demo-service/service/template"
 )
 ` + exportsTail,
 		},
@@ -531,8 +555,8 @@ import (
 	"github.com/kamalyes/go-rpc-gateway/global"
 	sqlrepo "github.com/kamalyes/go-sqlbuilder/repository"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 ` + exportsTail,
 		},
@@ -554,8 +578,8 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 
 // ============================================================
@@ -598,8 +622,8 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 
 // ============================================================
@@ -642,8 +666,8 @@ import (
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 
 // ============================================================
@@ -720,11 +744,11 @@ func TestGoInsertIdempotent(t *testing.T) {
 			Stmt: "pb.RegisterExampleServiceServer(srv,   s.exampleSvc)",
 		}},
 		{"import", exportsFixture, &ImportInsert{
-			Path: "a.go", Import: "github.com/HitGameAI/apex-notify-service/service/template",
-			Alias: "templatesvc", Near: "github.com/HitGameAI/apex-notify-service/service/common",
+			Path: "a.go", Import: "github.com/example/demo-service/service/template",
+			Alias: "templatesvc", Near: "github.com/example/demo-service/service/common",
 		}},
 		{"import_已有同路径同别名", exportsFixture, &ImportInsert{
-			Path: "a.go", Import: "github.com/HitGameAI/apex-notify-service/service/notify",
+			Path: "a.go", Import: "github.com/example/demo-service/service/notify",
 			Alias: "notifysvc",
 		}},
 		{"type 别名", exportsFixture, &DeclInsert{
@@ -858,8 +882,8 @@ func TestImportFormatIfCleanSortsWithinGroup(t *testing.T) {
 
 	"github.com/kamalyes/go-rpc-gateway/global"
 
-	commonsvc "github.com/HitGameAI/apex-notify-service/service/common"
-	notifysvc "github.com/HitGameAI/apex-notify-service/service/notify"
+	commonsvc "github.com/example/demo-service/service/common"
+	notifysvc "github.com/example/demo-service/service/notify"
 )
 `
 	if !strings.Contains(got, want) {
@@ -894,8 +918,11 @@ func TestLocateErrors(t *testing.T) {
 			wantMsg: "单行声明",
 		},
 		{
-			name:    "const 块锚点为空",
-			before:  constFixture,
+			// 免锚点只在唯一块时成立；两个块时猜哪个都是错的，必须报歧义
+			// [EN] Anchorless resolution holds only for a sole block; with two of them any
+			// guess would be wrong, so an ambiguity error is required
+			name:    "const 有两个块时锚点为空",
+			before:  twoConstBlocksFixture,
 			patch:   &DeclInsert{Path: "a.go", Name: "TableNameOrder", Value: `"orders"`},
 			wantErr: ErrInvalidPatch,
 			wantMsg: "Marker 或 Member",
@@ -1009,7 +1036,7 @@ func TestLocateErrors(t *testing.T) {
 			name:   "import 同路径不同别名要报冲突",
 			before: exportsFixture,
 			patch: &ImportInsert{Path: "a.go", Alias: "notify",
-				Import: "github.com/HitGameAI/apex-notify-service/service/notify"},
+				Import: "github.com/example/demo-service/service/notify"},
 			wantErr: ErrConflict,
 			wantMsg: `已经以别名 "notifysvc" 导入过`,
 		},
@@ -1017,7 +1044,7 @@ func TestLocateErrors(t *testing.T) {
 			name:   "import 同路径从有别名变无别名也报冲突",
 			before: exportsFixture,
 			patch: &ImportInsert{Path: "a.go",
-				Import: "github.com/HitGameAI/apex-notify-service/service/notify"},
+				Import: "github.com/example/demo-service/service/notify"},
 			wantErr: ErrConflict,
 			wantMsg: "与期望的别名 <无别名> 冲突",
 		},
